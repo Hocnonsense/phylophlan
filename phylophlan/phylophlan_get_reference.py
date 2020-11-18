@@ -13,9 +13,10 @@ import sys
 import bz2
 import os
 import argparse as ap
-from urllib.request import urlretrieve
-import time
 import ftplib
+from phylophlan.utils import (
+    clock, info, error, create_folder, download
+)
 
 
 if sys.version_info[0] < 3:
@@ -25,28 +26,6 @@ if sys.version_info[0] < 3:
 DB_TYPE_CHOICES = ['n', 'a']
 DOWNLOAD_URL = "https://www.dropbox.com/s/gsnmn0xayx2rqrm/taxa2genomes.txt?dl=1"
 GB_ASSEMBLY_URL = "https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt"
-
-
-def info(s, init_new_line=False, exit=False, exit_value=0):
-    if init_new_line:
-        sys.stdout.write('\n')
-
-    sys.stdout.write('{}'.format(s))
-    sys.stdout.flush()
-
-    if exit:
-        sys.exit(exit_value)
-
-
-def error(s, init_new_line=False, exit=False, exit_value=1):
-    if init_new_line:
-        sys.stderr.write('\n')
-
-    sys.stderr.write('[e] {}\n'.format(s))
-    sys.stderr.flush()
-
-    if exit:
-        sys.exit(exit_value)
 
 
 def read_params():
@@ -120,16 +99,6 @@ def check_params(args, verbose=False):
         info('Arguments: {}\n'.format(vars(args)))
 
 
-def create_folder(output, verbose=False):
-    if not os.path.exists(output):
-        if verbose:
-            info('Creating output folder "{}"\n'.format(output))
-
-        os.mkdir(output, mode=0o775)
-    elif verbose:
-        info('Output folder "{}" present\n'.format(output))
-
-
 def database_update(update=False, verbose=False):
     taxa2genomes_file_latest = None
     taxa2genomes_file = os.path.basename(DOWNLOAD_URL).replace('?dl=1', '')
@@ -144,66 +113,6 @@ def database_update(update=False, verbose=False):
     download(taxa2genomes_file_latest_url, taxa2genomes_file_latest, overwrite=update, verbose=verbose)
 
     return taxa2genomes_file_latest
-
-
-def byte_to_megabyte(byte):
-    """
-    Convert byte value to megabyte
-    """
-
-    return (byte / 1048576)
-
-
-class ReportHook():
-
-    def __init__(self):
-        self.start_time = time.time()
-
-    def report(self, blocknum, block_size, total_size):
-        """
-        Print download progress message
-        """
-
-        if blocknum == 0:
-            self.start_time = time.time()
-
-            if total_size > 0:
-                info("Downloading file of size: {:.2f} MB\n".format(byte_to_megabyte(total_size)))
-        else:
-            total_downloaded = blocknum * block_size
-            status = "{:3.2f} MB ".format(byte_to_megabyte(total_downloaded))
-
-            if total_size > 0:
-                percent_downloaded = total_downloaded * 100.0 / total_size
-                # use carriage return plus sys.stderr to overwrite stderr
-                download_rate = total_downloaded / (time.time() - self.start_time)
-                estimated_time = (total_size - total_downloaded) / download_rate
-                estimated_minutes = int(estimated_time / 60.0)
-                estimated_seconds = estimated_time - estimated_minutes * 60.0
-                status += ("{:3.2f} %  {:5.2f} MB/sec {:2.0f} min {:2.0f} sec "
-                           .format(percent_downloaded, byte_to_megabyte(download_rate),
-                                   estimated_minutes, estimated_seconds))
-
-            status += "        \r"
-            info(status)
-
-
-def download(url, download_file, overwrite=False, verbose=False):
-    """
-    Download a file from a url
-    """
-
-    if (not os.path.isfile(download_file)) or overwrite:
-        try:
-            if verbose:
-                info('Downloading "{}" to "{}"\n'.format(url, download_file))
-
-            urlretrieve(url, download_file, reporthook=ReportHook().report)
-            info('\n')
-        except EnvironmentError:
-            error('unable to download "{}"'.format(url), exit=True)
-    elif verbose:
-        info('File "{}" present\n'.format(download_file))
 
 
 def retrieve_refseq_url(gcx_id):
@@ -262,8 +171,8 @@ def get_reference_genomes(gb_assembly_file, taxa2genomes_file, taxa_label, num_r
 
     # load GenBank assembly summary
     gb_assembly_summary = dict([(r.strip().split('\t')[0],
-                                 (r.strip().split('\t')[19].replace('ftp://', 'https://') + '/' +
-                                  r.strip().split('\t')[19].split('/')[-1] + '_genomic.fna.gz'))
+                                 (r.strip().split('\t')[19].replace('ftp://', 'https://') + '/'
+                                  "" + r.strip().split('\t')[19].split('/')[-1] + '_genomic.fna.gz'))
                                 for r in open(gb_assembly_file) if not r.startswith('#')])
 
     # taxa2genomes format
@@ -299,6 +208,7 @@ def get_reference_genomes(gb_assembly_file, taxa2genomes_file, taxa_label, num_r
                 error('no URL found for "{}"'.format(genome))
 
 
+@clock()
 def phylophlan_get_reference():
     taxa2genomes_file_latest = None
     args = read_params()
@@ -320,8 +230,4 @@ def phylophlan_get_reference():
 
 
 if __name__ == '__main__':
-    t0 = time.time()
     phylophlan_get_reference()
-    t1 = time.time()
-    info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
-    sys.exit(0)
