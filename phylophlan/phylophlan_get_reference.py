@@ -15,7 +15,7 @@ import os
 import argparse as ap
 import ftplib
 from phylophlan.utils import (
-    clock, info, error, create_folder, download
+    clock, info, error, download
 )
 
 
@@ -97,6 +97,16 @@ def check_params(args, verbose=False):
 
     if verbose:
         info('Arguments: {}\n'.format(vars(args)))
+
+
+def create_folder(output, verbose=False):
+    if not os.path.exists(output):
+        if verbose:
+            info('Creating output folder "{}"\n'.format(output))
+
+        os.mkdir(output, mode=0o775)
+    elif verbose:
+        info('Output folder "{}" present\n'.format(output))
 
 
 def database_update(update=False, verbose=False):
@@ -208,7 +218,7 @@ def get_reference_genomes(gb_assembly_file, taxa2genomes_file, taxa_label, num_r
                 error('no URL found for "{}"'.format(genome))
 
 
-@clock()
+@clock(_exit=True)
 def phylophlan_get_reference():
     taxa2genomes_file_latest = None
     args = read_params()

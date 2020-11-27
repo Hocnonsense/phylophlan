@@ -32,13 +32,16 @@ import time
 import pickle
 from itertools import combinations
 import dendropy
-from urllib.request import urlretrieve
 import tarfile
 import hashlib
 import gzip
 import random as lib_random
 import numpy as np
 from distutils.spawn import find_executable
+
+from phylophlan.utils import (
+    clock, info, error, download
+)
 
 
 if sys.version_info[0] < 3:
@@ -74,28 +77,6 @@ GAP_PERC_THRESHOLD = 0.67
 FRAGMENTARY_THRESHOLD = 0.85
 UNKNOWN_FRACTION = 0.3
 DATABASE_DOWNLOAD_URL = "https://www.dropbox.com/s/x7cvma5bjzlllbt/phylophlan_databases.txt?dl=1"
-
-
-def info(s, init_new_line=False, exit=False, exit_value=0):
-    if init_new_line:
-        sys.stdout.write('\n')
-
-    sys.stdout.write('{}'.format(s))
-    sys.stdout.flush()
-
-    if exit:
-        sys.exit(exit_value)
-
-
-def error(s, init_new_line=False, exit=False, exit_value=1):
-    if init_new_line:
-        sys.stderr.write('\n')
-
-    sys.stderr.write('[e] {}\n'.format(s))
-    sys.stderr.flush()
-
-    if exit:
-        sys.exit(exit_value)
 
 
 def read_params():
@@ -157,9 +138,9 @@ def read_params():
                    help=('Specify which type of trimming to perform: '
                          '"gap_trim": execute what specified in the "trim" section of the configuration file; '
                          '"gap_perc": remove columns with a percentage of gaps above a certain threshold '
-                                      '(see "--gap_perc_threshold" parameter)'
+                         '             (see "--gap_perc_threshold" parameter)'
                          '"not_variant": remove columns with at least one nucleotide/amino acid appearing above a certain threshold '
-                                        '(see "--not_variant_threshold" parameter); '
+                         '               (see "--not_variant_threshold" parameter); '
                          '"greedy": performs all the above trimming steps; '
                          'If not specified, no trimming will be performed'))
     p.add_argument('--gap_perc_threshold', type=float, default=GAP_PERC_THRESHOLD,
@@ -429,7 +410,7 @@ def check_args(args, command_line_arguments, verbose=False):
         args.subsample = subsample
 
     if (args.database != 'phylophlan') and (args.subsample == 'phylophlan'):
-            error('subsample function "phylophlan" is compatible only with the "phylophlan" database', exit=True)
+        error('subsample function "phylophlan" is compatible only with the "phylophlan" database', exit=True)
 
     if args.subsample == 'full':
         args.subsample = None
@@ -448,13 +429,13 @@ def check_args(args, command_line_arguments, verbose=False):
 
             if verbose:
                 info('Setting "min_num_markers={}" since no value has been specified and the "database={}"\n'
-                    .format(args.min_num_markers, args.database))
+                     .format(args.min_num_markers, args.database))
         elif args.database == 'amphora2':
             args.min_num_markers = 34
 
             if verbose:
                 info('Setting "min_num_markers={}" since no value has been specified and the "database={}"\n'
-                    .format(args.min_num_markers, args.database))
+                     .format(args.min_num_markers, args.database))
 
     # check not_variant_threshold settings
     if not_variant_threshold and ('--not_variant_threshold' not in command_line_arguments):
@@ -540,6 +521,7 @@ def check_configs(configs, verbose=False):
         info('Checking configuration file\n')
 
     # checking whether mandatory sections and options are present
+    # one of each group must exist
     for sections in CONFIG_SECTIONS_MANDATORY:
         mandatory_sections = False
 
@@ -766,7 +748,7 @@ def compose_command(params, check=False, sub_mod=None, input_file=None, database
     quotes = [j for j, e in enumerate(command_line) if e == '"']
 
     for s, e in zip(quotes[0::2], quotes[1::2]):
-        command_line = command_line.replace(command_line[s + 1:e], command_line[s + 1:e])
+        command_line = command_line.replace(command_line[s + 1:e], command_line[s + 1:e])  # useless?
 
     return {'command_line': [str(a) for a in re.sub(' +', ' ', command_line.replace('"', '')).split(' ') if a],
             'stdin': stdin, 'stdout': stdout, 'env': environment, 'output_path': r_output_path, 'output_file': r_output_file}
@@ -799,11 +781,11 @@ def init_database(database, databases_folder, db_type, params, key_dna, key_aa, 
     db_dna, db_aa = None, None
 
     if not db_type:
-        fna = os.path.join(databases_folder, database, database + '.fna')
-        fna_bz2 = os.path.join(databases_folder, database, database + '.fna.bz2')
-        faa = os.path.join(databases_folder, database, database + '.faa')
-        faa_bz2 = os.path.join(databases_folder, database, database + '.faa.bz2')
         folder = os.path.join(databases_folder, database)
+        fna = os.path.join(folder, database + '.fna')
+        fna_bz2 = os.path.join(folder, database + '.fna.bz2')
+        faa = os.path.join(folder, database + '.faa')
+        faa_bz2 = os.path.join(folder, database + '.faa.bz2')
         d = None
 
         if os.path.isfile(fna) or os.path.isfile(fna_bz2):
@@ -1150,8 +1132,8 @@ def check_input_proteomes_rec(x):
 def clean_inputs(inputs, output_folder, proteins=False, nproc=1, verbose=False):
     commands = []
     check_and_create_folder(output_folder, create=True, verbose=verbose)
-    commands = [(inp if os.path.isfile(inp) else os.path.join(inputs[inp], inp), 
-                 os.path.join(output_folder, os.path.basename(inp)), 
+    commands = [(inp if os.path.isfile(inp) else os.path.join(inputs[inp], inp),
+                 os.path.join(output_folder, os.path.basename(inp)),
                  proteins)
                 for inp in inputs if not os.path.isfile(os.path.join(output_folder, os.path.basename(inp)))]
 
@@ -1431,8 +1413,8 @@ def gene_markers_extraction_rec(x):
             contig2marker2b6o = {}
             info('Extracting "{}"\n'.format(b6o_file))
 
-            for l in bz2.open(b6o_file, 'rt'):
-                row = l.strip().split('\t')
+            for line in bz2.open(b6o_file, 'rt'):
+                row = line.strip().split('\t')
                 contig = row[0]
                 marker = row[1]
                 start = int(row[2])
@@ -1557,10 +1539,10 @@ def fake_proteome_rec(x):
 
             t1 = time.time()
             info('"{}" generated in {}s\n'.format(out, int(t1 - t0)))
-        except Exception as e:
+        except Exception as err:
             terminating.set()
             remove_file(out)
-            error(str(e), init_new_line=True)
+            error(str(err), init_new_line=True)
             error('error while generating\n    {}'.format('\n    '.join([str(a) for a in x])), init_new_line=True)
             raise
     else:
@@ -1832,7 +1814,7 @@ def trim_gap_perc_rec(x):
 
             for i in range(len(inp_aln[0])):
                 if gap_cost(inp_aln[:, i], norm=True) >= thr:
-                        cols_to_remove.append(i)
+                    cols_to_remove.append(i)
 
             for aln in inp_aln:
                 seq = ''.join([c for i, c in enumerate(aln.seq) if i not in cols_to_remove])
@@ -1851,7 +1833,7 @@ def trim_gap_perc_rec(x):
                     t1 = time.time()
                     info('"{}" generated in {}s\n'.format(out, int(t1 - t0)))
             elif verbose:
-                    info('"{}" discarded because no columns retained while removing not variant sites (thr: {})\n'.format(inp, thr))
+                info('"{}" discarded because no columns retained while removing not variant sites (thr: {})\n'.format(inp, thr))
 
         except Exception as e:
             terminating.set()
@@ -1938,7 +1920,7 @@ def trim_not_variant_rec(x):
                     t1 = time.time()
                     info('"{}" generated in {}s\n'.format(out, int(t1 - t0)))
             elif verbose:
-                    info('"{}" discarded because no columns retained while removing not variant sites (thr: {})\n'.format(inp, thr))
+                info('"{}" discarded because no columns retained while removing not variant sites (thr: {})\n'.format(inp, thr))
         except Exception as e:
             terminating.set()
             remove_file(out)
@@ -2154,7 +2136,7 @@ def subsample_rec(x):
             try:
                 marker = os.path.splitext(os.path.basename(inp))[0][1:]
                 marker = int(marker)
-            except Exception as _:
+            except Exception:
                 marker = None
 
             npos = npos_function(marker, len_seq)
@@ -2282,7 +2264,7 @@ def stereochemical_diversity(seq, submat):
 
 def normalized_submat_scores(aa, submat):
     """
-    Karlin S, Brocchieri L. Evolutionary conservation of RecA genes in
+    Karlin S, Brocchieri line. Evolutionary conservation of RecA genes in
     relation to protein structure and function. J Bacteriol 1996;178:
     1881-1894.
     """
@@ -2765,7 +2747,7 @@ def mutation_rates(input_folder, output_folder, nproc=1, verbose=False):
     commands = [(inp, output_folder, os.path.splitext(os.path.basename(inp))[0], verbose)
                 for inp in glob.iglob(os.path.join(input_folder, "*.aln"))
                 if not os.path.exists(os.path.join(output_folder, os.path.splitext(os.path.basename(inp))[0] + '.tsv.bz2')) and
-                   not os.path.exists(os.path.join(output_folder, os.path.splitext(os.path.basename(inp))[0] + '.pkl.bz2'))]
+                not os.path.exists(os.path.join(output_folder, os.path.splitext(os.path.basename(inp))[0] + '.pkl.bz2'))]
 
     if commands:
         info('Computing mutation rates for {} markers\n'.format(len(commands)))
@@ -2903,7 +2885,7 @@ def standard_phylogeny_reconstruction(project_name, configs, args, db_dna, db_aa
         input_fna_clean = load_input_files(inp_f, inp_bz2, args.genome_extension, verbose=args.verbose)
 
         inp_f = os.path.join(args.data_folder, 'map_dna')
-        gene_markers_identification(configs, 'map_dna', input_fna_clean, inp_f, args.database, db_dna, 
+        gene_markers_identification(configs, 'map_dna', input_fna_clean, inp_f, args.database, db_dna,
                                     nproc=args.nproc, verbose=args.verbose)
         gene_markers_selection(inp_f, largest_cluster if (args.db_type == 'a') and (not args.force_nucleotides) else best_hit,
                                args.min_num_proteins, nucleotides=True if args.db_type == 'a' else False,
@@ -2940,7 +2922,7 @@ def standard_phylogeny_reconstruction(project_name, configs, args, db_dna, db_aa
 
             if input_faa_clean:
                 inp_f = os.path.join(args.data_folder, 'map_aa')
-                gene_markers_identification(configs, 'map_aa', input_faa_clean, inp_f, args.database, db_aa, 
+                gene_markers_identification(configs, 'map_aa', input_faa_clean, inp_f, args.database, db_aa,
                                             nproc=args.nproc, verbose=args.verbose)
                 gene_markers_selection(inp_f, best_hit, args.min_num_proteins, nucleotides=False,
                                        nproc=args.nproc, verbose=args.verbose)
@@ -3044,7 +3026,7 @@ def standard_phylogeny_reconstruction(project_name, configs, args, db_dna, db_aa
             error('output phylogeny from [tree1] not recognized', exit=True)
 
         resolve_polytomies(inp_tree, os.path.join(args.output, outt), nproc=args.nproc, verbose=args.verbose)
-        refine_phylogeny(configs, 'tree2', inp_f, os.path.join(args.output, outt), os.path.abspath(args.output), 
+        refine_phylogeny(configs, 'tree2', inp_f, os.path.join(args.output, outt), os.path.abspath(args.output),
                          project_name + '_refined.tre', nproc=args.nproc, verbose=args.verbose)
 
 
@@ -3054,57 +3036,6 @@ def byte_to_megabyte(byte):
     """
 
     return (byte / 1048576)
-
-
-class ReportHook():
-
-    def __init__(self):
-        self.start_time = time.time()
-
-    def report(self, blocknum, block_size, total_size):
-        """
-        Print download progress message
-        """
-
-        if blocknum == 0:
-            self.start_time = time.time()
-
-            if total_size > 0:
-                info("Downloading file of size: {:.2f} MB\n".format(byte_to_megabyte(total_size)))
-        else:
-            total_downloaded = blocknum * block_size
-            status = "{:3.2f} MB ".format(byte_to_megabyte(total_downloaded))
-
-            if total_size > 0:
-                percent_downloaded = total_downloaded * 100.0 / total_size
-                # use carriage return plus sys.stderr to overwrite stderr
-                download_rate = total_downloaded / (time.time() - self.start_time)
-                estimated_time = (total_size - total_downloaded) / download_rate
-                estimated_minutes = int(estimated_time / 60.0)
-                estimated_seconds = estimated_time - estimated_minutes * 60.0
-                status += ("{:3.2f} %  {:5.2f} MB/sec {:2.0f} min {:2.0f} sec "
-                           .format(percent_downloaded, byte_to_megabyte(download_rate), estimated_minutes, estimated_seconds))
-
-            status += "        \r"
-            info(status)
-
-
-def download(url, download_file, overwrite=False, verbose=False):
-    """
-    Download a file from a url
-    """
-
-    if (not os.path.isfile(download_file)) or overwrite:
-        try:
-            if verbose:
-                info('Downloading "{}" to "{}"\n'.format(url, download_file))
-
-            urlretrieve(url, download_file, reporthook=ReportHook().report)
-            info('\n')
-        except EnvironmentError:
-            error('unable to download "{}"'.format(url), exit=True)
-    elif verbose:
-        info('File "{}" present\n'.format(download_file))
 
 
 def download_and_unpack_db(db_name, db_url, db_md5, folder, update=False, verbose=False):
@@ -3183,6 +3114,7 @@ def download_and_unpack_db(db_name, db_url, db_md5, folder, update=False, verbos
         error('unable to extract "{}"'.format(tar_file))
 
 
+@clock(_exit=True)
 def phylophlan_main():
     args = read_params()
 
@@ -3231,8 +3163,4 @@ def phylophlan_main():
 
 
 if __name__ == '__main__':
-    t0 = time.time()
     phylophlan_main()
-    t1 = time.time()
-    info('\nTotal elapsed time {}s\n'.format(int(t1 - t0)))
-    sys.exit(0)
