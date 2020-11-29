@@ -3,7 +3,7 @@
 """
  * @Date: 2020-11-18 21:28:28
  * @LastEditors: Hwrn
- * @LastEditTime: 2020-11-18 22:09:28
+ * @LastEditTime: 2020-11-25 21:02:55
  * @FilePath: /phylophlan/phylophlan/utils.py
  * @Description:
 """
@@ -19,12 +19,56 @@ __version__ = '3.0.1'
 __date__ = '18 Nov 2020'
 
 
+import argparse as ap
 import os
 import sys
 import time
 from functools import wraps
-from urllib.request import urlretrieve
 from typing import Callable
+from urllib.request import urlretrieve
+
+
+DATABASES_FOLDER = 'phylophlan_databases/'
+SUBMAT_FOLDER = 'phylophlan_substitution_matrices/'
+SUBMOD_FOLDER = 'phylophlan_substitution_models/'
+CONFIGS_FOLDER = 'phylophlan_configs/'
+OUTPUT_FOLDER = ''
+
+
+def read_params(p: ap.ArgumentParser):
+    p = ap.ArgumentParser(description=(""),
+                          formatter_class=ap.ArgumentDefaultsHelpFormatter)
+
+    p.add_argument('--databases_folder', type=str, default=DATABASES_FOLDER,
+                   help="Path to the folder containing the database files")
+    p.add_argument('--output_folder', type=str, default=OUTPUT_FOLDER,
+                   help="Path to the output folder where to save the results")
+
+    p.add_argument('-o', '--output', type=str, default=None,
+                   help=("Output folder name, otherwise it will be the name of the input folder concatenated with the name of "
+                         "the database used"))
+    p.add_argument('-f', '--config_file', type=str, default=None,
+                   help=('The configuration file to use. Four ready-to-use configuration files can be generated using the '
+                         '"phylophlan_write_default_configs.sh" script'))
+    p.add_argument('--clean_all', action='store_true', default=False,
+                   help="Remove all installation and database files automatically generated")
+    p.add_argument('--nproc', type=int, default=1,
+                   help="The number of cores to use")
+
+    p.add_argument('--update', action='store_true',
+                   default=False, help="Update the databases file")
+    p.add_argument('--citation', action='version',
+                   version=('Asnicar, F., Thomas, A.M., Beghini, F. et al. '
+                            'Precise phylogenetic analysis of microbial isolates and genomes from metagenomes using PhyloPhlAn 3.0. '
+                            'Nat Commun 11, 2500 (2020). '
+                            'https://doi.org/10.1038/s41467-020-16366-7'),
+                   help="Show citation")
+    p.add_argument('--verbose', action='store_true',
+                   default=False, help="Makes PhyloPhlAn verbose")
+    p.add_argument('-v', '--version', action='version', version='PhyloPhlAn version {} ({})'.format(__version__, __date__),
+                   help="Prints the current PhyloPhlAn version and exit")
+
+    return p.parse_args()
 
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
@@ -47,16 +91,6 @@ def error(s, init_new_line=False, exit=False, exit_value=1):
 
     if exit:
         sys.exit(exit_value)
-
-
-def create_folder(output, verbose=False):
-    if not os.path.exists(output):
-        if verbose:
-            info('Creating output folder "{}"\n'.format(output))
-
-        os.mkdir(output, mode=0o775)
-    elif verbose:
-        info('Output folder "{}" present\n'.format(output))
 
 
 class ReportHook():
@@ -122,8 +156,9 @@ def download(url, download_file, overwrite=False, verbose=False):
 
 
 class clock:
-    def __init__(self) -> None:
+    def __init__(self, _exit=False) -> None:
         self.start = None
+        self.exit = _exit
 
     def __call__(self, func: Callable):
         """
@@ -147,4 +182,5 @@ class clock:
         end = time.time()
         info('Total elapsed time {}s\n'.format(int(end - self.start)),
              init_new_line=True)
-        sys.exit(0)
+        if self.exit:
+            sys.exit(0)

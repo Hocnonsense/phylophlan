@@ -1264,7 +1264,7 @@ def gene_markers_selection(input_folder, function, min_num_proteins, nucleotides
                 if not os.path.isfile(f.replace('.bkp', '.bz2'))]
 
     if commands:
-        info('Selecting {} markers from "{}"\n'.format(len(commands), input_folder))
+        info('Selecting markers from {} inputs in "{}"\n'.format(len(commands), input_folder))
         terminating = mp.Event()
 
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=nproc) as pool:
@@ -1467,16 +1467,16 @@ def gene_markers_extraction_rec(x):
                                 out_file_seq.append(SeqRecord(Seq(record[1][s - 1:e - 2]).reverse_complement(),
                                                               id='{}{}-{}'.format(idd, s, e - 2), description=''))
 
-            len_out_file_seq = int(len(out_file_seq) / 3) if frameshifts else len(out_file_seq)
+            num_out_file_seq = len(out_file_seq) // (3 if frameshifts else 1)
 
-            if out_file_seq and (len_out_file_seq >= min_num_markers):
+            if out_file_seq and (num_out_file_seq >= min_num_markers):
                 with bz2.open(out_file, 'wt') as f:
                     SeqIO.write(out_file_seq, f, 'fasta')
 
                 t1 = time.time()
                 info('"{}" generated in {}s\n'.format(out_file, int(t1 - t0)))
             else:
-                info('Not enough markers ({}/{}) found in "{}"\n'.format(len_out_file_seq, min_num_markers, b6o_file))
+                info('Not enough markers ({}/{}) found in "{}"\n'.format(num_out_file_seq, min_num_markers, b6o_file))
         except Exception as e:
             terminating.set()
             remove_file(out_file)
@@ -1554,7 +1554,7 @@ def inputs2markers(input_folder, output_folder, min_num_entries, extension, verb
     check_and_create_folder(output_folder, create=True, verbose=verbose)
 
     if os.path.isdir(output_folder):
-        for f in glob.iglob(os.path.join(output_folder, '*' + extension)):
+        if len(glob.iglob(os.path.join(output_folder, '*' + extension))):
             info('Inputs already translated into markers\n')
             return
 
@@ -1564,10 +1564,7 @@ def inputs2markers(input_folder, output_folder, min_num_entries, extension, verb
         for idd, seq in SimpleFastaParser(bz2.open(f, 'rt')):
             marker = idd.split(' ')[0].split(':')[0].split('_')[-1]
 
-            if marker in markers2inputs:
-                markers2inputs[marker].append(SeqRecord(Seq(seq), id=inp, description=''))
-            else:
-                markers2inputs[marker] = [SeqRecord(Seq(seq), id=inp, description='')]
+            markers2inputs.setdefault(marker, []).append(SeqRecord(Seq(seq), id=inp, description=''))
 
     for marker, sequences in markers2inputs.items():
         if len(sequences) >= min_num_entries:
@@ -2120,7 +2117,7 @@ def subsample_rec(x):
             scores = []
             out_aln = []
 
-            for i in range(len(inp_aln[0])):
+            for i in range(len_seq):
                 col = Counter(inp_aln[:, i].upper())
 
                 if (len(col) == 1) or \
